@@ -6,7 +6,7 @@ import AttnRes.Attention as Attn
 class SparseAttentionResNet(nn.Module):
     def __init__(self, indim, outdim, resblocks, resdim, reslayers, latentdim, normalize=True, dropout=0.1):
         super().__init__()
-        self.inlayer = nn.Linear(indim, latentdim)
+        self.inlayer = nn.Linear(indim, latentdim, bias=False)
         self.norm1   = nn.LayerNorm(latentdim)
         self.drop = nn.Dropout(dropout)
         self.activation = nn.GELU()
@@ -20,7 +20,7 @@ class SparseAttentionResNet(nn.Module):
                 dropout
             ) for _ in range(resblocks)
         )
-        self.outlayer = nn.Linear(latentdim, outdim)
+        self.outlayer = nn.Linear(latentdim, outdim, bias=False)
 
         self._residual_attention = Attn.AttentionModule(
             latentdim,
@@ -38,7 +38,7 @@ class SparseAttentionResNet(nn.Module):
         residual_tracker = x.unsqueeze(1)
         for i, mod in enumerate(self.residual_modules):
             x = mod(x)
-            residual_tracker = torch.cat( (residual_tracker, x.unsqueeze(1)), dim = -2 )
+            residual_tracker = torch.cat( (residual_tracker, x.unsqueeze(1)), dim = 1 )
             # Perform the attention mechanism on the sequence of residual tokens and complete residual connection
             if i > 0:
                 x = x + self._residual_attention( residual_tracker )

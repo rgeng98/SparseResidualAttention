@@ -8,8 +8,10 @@ from torch.utils.data import DataLoader
 import AttnRes
 import numpy as np
 from tqdm import tqdm
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-EPOCHS = 25
+EPOCHS = 1000
+LR = 1e-5
 IMAGEX = 227
 IMAGEY = 235
 
@@ -74,15 +76,16 @@ if __name__ == "__main__":
          in_h = IMAGEX,
          in_w = IMAGEY,
          outdim = len(idx_ident.keys()),
-         resblocks = 4,
+         resblocks = 5,
          resdim = 128,
-         reslayers = 2,
-         latentdim = 128
+         reslayers = 3,
+         latentdim = 64,
+         dropout = 0.05
     ).to(DEVICE)
 
     optim = torch.optim.AdamW(
          model.parameters(),
-         lr = 5e-3
+         lr = LR
     )
 
     metrics = {
@@ -96,7 +99,7 @@ if __name__ == "__main__":
         logging.info(f"Starting epoch {e}")
         model.train()
         for inputs, targets in tqdm(train_loader):
-            inputs  = (inputs + 0.05 * torch.rand_like(inputs)).to(DEVICE)
+            inputs  = (inputs + 0.25 * torch.rand_like(inputs)).to(DEVICE)
             targets = targets.to(DEVICE)
 
             optim.zero_grad()
@@ -131,7 +134,10 @@ if __name__ == "__main__":
 
     plt.figure()
     plt.plot(metrics["train"])
+    plt.title("Training")
+    plt.figure()
     plt.plot(metrics["validation"])
+    plt.title("Validation")
     plt.show()
 
 

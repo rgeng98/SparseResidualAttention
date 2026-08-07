@@ -18,13 +18,13 @@ class Mod(nn.Module):
 
         self._drop = nn.Dropout(self._p)
 
-        self.inlayer = nn.Linear(self._ifacedim, self._latent)
+        self.inlayer = nn.Linear(self._ifacedim, self._latent, bias=False)
         if self._normalize:
             self.norm1 = nn.LayerNorm(self._latent)
         self.activation = nn.GELU()
 
         self.layers = nn.ModuleList(
-            nn.Linear(self._latent, self._latent) for _ in range(self._nlayers)
+            nn.Linear(self._latent, self._latent, bias=False) for _ in range(self._nlayers)
         )
 
         if self._normalize:
@@ -32,7 +32,7 @@ class Mod(nn.Module):
                 nn.LayerNorm(self._latent) for _ in range(self._nlayers)
             )
 
-        self.outlayer = nn.Linear(self._latent, self._ifacedim)
+        self.outlayer = nn.Linear(self._latent, self._ifacedim, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.inlayer(x)
