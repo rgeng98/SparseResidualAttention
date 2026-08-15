@@ -8,10 +8,9 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-EPOCHS = 1000
+MAX_TOKENS = 5e6
 LR = 5e-4
-IMAGEX = 227
-IMAGEY = 235
+LOG_EVERY = 100
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,9 +31,10 @@ if __name__ == "__main__":
     
     model_kwargs = dict(
          num_embeddings=50257,
-         embedding_dim=1024,
-         n_heads = 8,
-         attn_layers = 5,
+         embedding_dim=256,
+         n_heads = 4,
+         max_seq_len = block_size,
+         attn_layers = 3,
          dropout = 0.05
     )
     
@@ -47,11 +47,11 @@ if __name__ == "__main__":
          model.parameters(),
          lr = LR
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optim, 
-        T_max=EPOCHS,  # Total number of iterations to reach minimum LR
-        eta_min=LR*1e-4       # Minimum learning rate target
-    )
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    #     optim, 
+    #     T_max=EPOCHS,  # Total number of iterations to reach minimum LR
+    #     eta_min=LR*1e-4       # Minimum learning rate target
+    # )
     metrics = {
          "train": [],
          "validation": []
@@ -61,12 +61,13 @@ if __name__ == "__main__":
     num_tokens = []
     loss = torch.nn.CrossEntropyLoss()
     best_val_loss = 1000
-    for e in range(EPOCHS):
-        train_loss = []
-        logging.info(f"Starting epoch {e}")
-        model.train()
-        # Group training into "chunks" within an epoch. Chunk size controls how many loss values are averaged before appending them to the list.
-        for _ in tqdm(range(chunk)):
+    
+    train_loss = []
+    logging.info(f"Starting training on {MAX_TOKENS:,} tokens")
+
+    with tqdm(total=MAX_TOKENS) as pbar:
+        while prev_token_count < MAX_TOKENS:
+            model.train()
             # Get the training batch
             inputs, targets = dataloader.get_batch("train")
             B, T = inputs.shape
@@ -83,55 +84,55 @@ if __name__ == "__main__":
             optim.step()
 
             train_loss.append(error.detach().item())
+            pbar.update(B*T)
+            # scheduler.step()
+            
+            prev_token_count = prev_token_count + B*T
+            
 
-        scheduler.step()
-        metrics["train"].append( np.mean(train_loss) )
-        prev_token_count = prev_token_count + chunk*block_size
-        num_tokens.append(prev_token_count)
+            # Log off plotting points every 100 steps
+            if len(train_loss) >= LOG_EVERY:
+                metrics["train"].append( np.mean(train_loss) )
+                train_loss = []
 
-        model.eval()
-        val_loss = []
-        with torch.no_grad():
-            for _ in tqdm(range(10)):
-                # Get the training batch
-                data = dataloader.get_batch("val")
-    
-                inputs  = data[0]
-                targets = data[1].to(torch.long)
-                guess = model(inputs)
-                
-                error = loss(guess.view(B*T, -1), targets.view(B*T))
-
-                val_loss.append(error.detach().item())
-
+                model.eval()
+                with torch.no_grad():
+                    # Get the training batch
+                    data = dataloader.get_batch("val")
         
-        metrics["validation"].append( np.mean(val_loss) )
-
-        logging.info(f"Error at the end of epoch: {metrics['train'][-1]} [Training]; {metrics['validation'][-1]} [Validation]")
+                    inputs  = data[0]
+                    targets = data[1].to(torch.long)
+                    guess = model(inputs)
+                    
+                    error = loss(guess.view(B*T, -1), targets.view(B*T))
     
-        if metrics["validation"][-1] < best_val_loss:
-            best_val_loss = metrics["validation"][-1]
-            torch.save(
-                {
-                    "model_state_dict": model.state_dict(),
-                    "model_kwargs": model_kwargs,
-                    "block_size": block_size,
-                    "epoch": e,
-                },
-                "checkpoint.pt",
-            )
-            logging.info(f"Saved model checkpoint with a validation loss of {metrics["validation"][-1]}")
+                    metrics["validation"].append( error.detach().item() )
+  
+                num_tokens.append(prev_token_count)
 
-        plt.figure()
-        plt.plot(np.array( num_tokens ) / 1e6, metrics["train"], label="Training")
-        plt.plot(np.array( num_tokens ) / 1e6, metrics["validation"], label="Validation")
-        plt.grid()
-        plt.legend()
-        plt.xlabel("Millions of Tokens")
-        plt.ylabel("Cross Entropy Loss [-]")
-        plt.title("My GPT")
-        plt.savefig("GPT_Training.png")
-        plt.close("all")
+                if metrics["validation"][-1] < best_val_loss:
+                    best_val_loss = metrics["validation"][-1]
+                    torch.save(
+                        {
+                            "model_state_dict": model.state_dict(),
+                            "model_kwargs": model_kwargs,
+                            "block_size": block_size,
+                            "num_tokens": prev_token_count,
+                        },
+                        "checkpoint.pt",
+                    )
+                    logging.debug(f"Saved model checkpoint with a validation loss of {metrics["validation"][-1]}")
+
+                plt.figure()
+                plt.plot(np.array( num_tokens ) / 1e6, metrics["train"], label="Training")
+                plt.plot(np.array( num_tokens ) / 1e6, metrics["validation"], label="Validation")
+                plt.grid()
+                plt.legend()
+                plt.xlabel("Millions of Tokens")
+                plt.ylabel("Cross Entropy Loss [-]")
+                plt.title("GPT Training History")
+                plt.savefig("GPT_Training.png")
+                plt.close("all")
 
 
     

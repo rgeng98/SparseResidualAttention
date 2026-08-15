@@ -46,7 +46,7 @@ def generate(model, block_size, idx, max_new_tokens, temperature, top_k):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--prompt", type=str, default="Mike is super gay, like the gayest person that has ever lived gay. Crazy gay.")
+    parser.add_argument("--prompt", type=str)
     parser.add_argument("--checkpoint", type=str, default="checkpoint.pt")
     parser.add_argument("--max_new_tokens", type=int, default=50)
     parser.add_argument("--temperature", type=float, default=0.8)

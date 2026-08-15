@@ -55,6 +55,7 @@ class LanguageModel(nn.Module):
     def __init__(
             self,
             num_embeddings: int, embedding_dim: int, n_heads: int,
+            max_seq_len: int,
             attn_layers: int = 3, dropout: float = 0.1):
         super().__init__()
 
@@ -63,6 +64,13 @@ class LanguageModel(nn.Module):
             num_embeddings,
             embedding_dim,
             max_norm=1
+        )
+
+        # Learned positional embedding, since the attention layers themselves
+        # (causal mask aside) carry no notion of token order.
+        self.pos_embedding = nn.Embedding(
+            max_seq_len,
+            embedding_dim
         )
 
         assert embedding_dim % n_heads == 0
@@ -81,25 +89,31 @@ class LanguageModel(nn.Module):
             ) for _ in range(attn_layers)
         )
         
-        self.attn_residual = A.AttentionModule(embedding_dim, dropout, aggregation="LAST")
+        self.attn_residual = A.AttentionModule(embedding_dim, dropout)
         
         self.activation = nn.GELU()
         self.output = nn.Linear(embedding_dim, num_embeddings, bias=False)
+        # Tie the output projection to the token embedding table. Halves the
+        # embedding-related parameter count and tends to help small models,
+        # which can't otherwise justify two separate 50257 x embedding_dim tables.
+        self.output.weight = self.stem.weight
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (B, S, E)
-        x = self.stem(x)
+        # x: (B, S) token ids
+        _, T = x.shape
+        positions = torch.arange(T, device=x.device)
+        x = self.stem(x) + self.pos_embedding(positions).unsqueeze(0)
         residual_list = torch.tensor([], device=x.device)
         for transformer, norm in zip(self.Transformers, self.layer_norms):
             # Starting with the architecture that we know should work well.
-            x = norm( transformer(x) + x )
+            y = transformer(x)
 
-            # resid = x.reshape(-1, x.shape[-1])
+            resid = x.reshape(-1, x.shape[-1])
 
-            # residual_list = torch.cat( ( residual_list, resid.unsqueeze(1) ), dim = 1 ) # Shape (B*S, R, H)
+            residual_list = torch.cat( ( residual_list, resid.unsqueeze(1) ), dim = 1 ) # Shape (B*S, R, H)
 
-            # residual_value = self.attn_residual(residual_list).reshape(x.shape)
-            # x = norm(y + residual_value)
+            residual_value = self.attn_residual(residual_list).reshape(x.shape)
+            x = norm(y + residual_value)
 
         # print(x.shape)
         return self.output(x)
