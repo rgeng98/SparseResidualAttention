@@ -8,9 +8,11 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MAX_TOKENS = 5e6
+MAX_TOKENS = 3.5e9 # Train this model an ~3.5 Billion tokens
 LR = 5e-4
 LOG_EVERY = 100
+
+tqdm.format_num = lambda n: f"{int(n):,}" if isinstance(n, (int, float)) else str(n)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,7 +33,7 @@ if __name__ == "__main__":
     
     model_kwargs = dict(
          num_embeddings=50257,
-         embedding_dim=256,
+         embedding_dim=1024,
          n_heads = 4,
          max_seq_len = block_size,
          attn_layers = 3,
@@ -130,6 +132,8 @@ if __name__ == "__main__":
                 plt.legend()
                 plt.xlabel("Millions of Tokens")
                 plt.ylabel("Cross Entropy Loss [-]")
+
+                plt.ylim([0,10])
                 plt.title("GPT Training History")
                 plt.savefig("GPT_Training.png")
                 plt.close("all")

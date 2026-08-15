@@ -28,7 +28,7 @@ def generate(model, block_size, idx, max_new_tokens, temperature, top_k):
     context_len = block_size - 1
     for _ in range(max_new_tokens):
         idx_cond = idx[:, -context_len:]
-        logits = model(idx_cond)
+        logits = model(idx_cond)[...,-1,:]
 
         if temperature <= 0:
             next_id = logits.argmax(dim=-1, keepdim=True)
