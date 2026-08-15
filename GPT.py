@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
-    block_size = 45
+    block_size = 30
     # Dataloader will provide batches of 8 tokens
     dataloader = AttnRes.dataloader.dataloader(
          data_dir = Path("data"), 
@@ -32,11 +32,12 @@ if __name__ == "__main__":
     
     model_kwargs = dict(
          num_embeddings=50257,
-         embedding_dim=2048,
+         embedding_dim=1024,
          n_heads = 8,
          attn_layers = 5,
          dropout = 0.05
     )
+    
     model = AttnRes.GPT.LanguageModel(**model_kwargs).to(DEVICE)
     param_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -55,33 +56,38 @@ if __name__ == "__main__":
          "train": [],
          "validation": []
     }
+    chunk = 100
+    prev_token_count = 0
+    num_tokens = []
     loss = torch.nn.CrossEntropyLoss()
-
+    best_val_loss = 1000
     for e in range(EPOCHS):
         train_loss = []
         logging.info(f"Starting epoch {e}")
         model.train()
-        for _ in tqdm(range(100)):
+        # Group training into "chunks" within an epoch. Chunk size controls how many loss values are averaged before appending them to the list.
+        for _ in tqdm(range(chunk)):
             # Get the training batch
-            data = dataloader.get_batch("train")
+            inputs, targets = dataloader.get_batch("train")
+            B, T = inputs.shape
 
-            for i in range(block_size-2):
-                
-                inputs  = data[0][...,:i+2]
-                targets = data[1][..., i+2].to(torch.long)
+            inputs  = inputs
+            targets = targets.to(torch.long)
 
-                optim.zero_grad()
+            optim.zero_grad()
 
-                guess = model(inputs)
+            guess = model(inputs)
+            error = loss(guess.view(B*T, -1), targets.view(B*T))
 
-                error = loss(guess, targets)
+            error.backward()
+            optim.step()
 
-                error.backward()
-                optim.step()
+            train_loss.append(error.detach().item())
 
-                train_loss.append(error.detach().item())
         scheduler.step()
         metrics["train"].append( np.mean(train_loss) )
+        prev_token_count = prev_token_count + chunk*block_size
+        num_tokens.append(prev_token_count)
 
         model.eval()
         val_loss = []
@@ -90,37 +96,42 @@ if __name__ == "__main__":
                 # Get the training batch
                 data = dataloader.get_batch("val")
     
-                for i in range(block_size-2):
-                    inputs  = data[0][...,:i+2]
-                    targets = data[1][..., i+2].to(torch.long)
-                    guess = model(inputs)
-                    error = loss(guess, targets)
-                    val_loss.append(error.detach().item())
+                inputs  = data[0]
+                targets = data[1].to(torch.long)
+                guess = model(inputs)
+                
+                error = loss(guess.view(B*T, -1), targets.view(B*T))
+
+                val_loss.append(error.detach().item())
 
         
         metrics["validation"].append( np.mean(val_loss) )
 
         logging.info(f"Error at the end of epoch: {metrics['train'][-1]} [Training]; {metrics['validation'][-1]} [Validation]")
+    
+        if metrics["validation"][-1] < best_val_loss:
+            best_val_loss = metrics["validation"][-1]
+            torch.save(
+                {
+                    "model_state_dict": model.state_dict(),
+                    "model_kwargs": model_kwargs,
+                    "block_size": block_size,
+                    "epoch": e,
+                },
+                "checkpoint.pt",
+            )
+            logging.info(f"Saved model checkpoint with a validation loss of {metrics["validation"][-1]}")
 
-        torch.save(
-            {
-                "model_state_dict": model.state_dict(),
-                "model_kwargs": model_kwargs,
-                "block_size": block_size,
-                "epoch": e,
-            },
-            "checkpoint.pt",
-        )
         plt.figure()
-        plt.plot(metrics["train"], label="Training")
-        plt.plot(metrics["validation"], label="Validation")
+        plt.plot(np.array( num_tokens ) / 1e6, metrics["train"], label="Training")
+        plt.plot(np.array( num_tokens ) / 1e6, metrics["validation"], label="Validation")
         plt.grid()
         plt.legend()
-        plt.xlabel("Training Epoch [-]")
+        plt.xlabel("Millions of Tokens")
         plt.ylabel("Cross Entropy Loss [-]")
         plt.title("My GPT")
         plt.savefig("GPT_Training.png")
-        plt.close()
+        plt.close("all")
 
 
     
