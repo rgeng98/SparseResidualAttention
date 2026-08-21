@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(wsl -d Ubuntu -- bash -lc \"docker --version 2>&1; echo ---; which docker 2>&1; echo ---; docker context ls 2>&1; echo ---; nvidia-smi 2>&1 | head -5\")",
-      "Bash(wsl -d Ubuntu -- bash -lc \"lsb_release -a 2>&1 | grep -i description\")"
-    ]
-  }
-}
