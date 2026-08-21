@@ -6,11 +6,15 @@ import AttnRes
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+# import bitsandbytes as bnb
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MAX_TOKENS = 3.5e9 # Train this model an ~3.5 Billion tokens
-LR = 5e-4
+LR = 1e-4
 LOG_EVERY = 100
+BATCH_SIZE = 4
+NUM_HEADS = 32
+BLOCK_SIZE = 100
 
 tqdm.format_num = lambda n: f"{int(n):,}" if isinstance(n, (int, float)) else str(n)
 
@@ -23,20 +27,19 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
-    block_size = 30
     # Dataloader will provide batches of 8 tokens
     dataloader = AttnRes.dataloader.dataloader(
          data_dir = Path("data"), 
-         block_size = block_size, 
-         batch_size = 32
+         block_size = BLOCK_SIZE, 
+         batch_size = BATCH_SIZE
     )
     
     model_kwargs = dict(
          num_embeddings=50257,
-         embedding_dim=1024,
-         n_heads = 4,
-         max_seq_len = block_size,
-         attn_layers = 3,
+         embedding_dim=2048,
+         n_heads = NUM_HEADS,
+         max_seq_len = BLOCK_SIZE,
+         attn_layers = 7,
          dropout = 0.05
     )
     
@@ -47,13 +50,14 @@ if __name__ == "__main__":
 
     optim = torch.optim.AdamW(
          model.parameters(),
-         lr = LR
+         lr = LR,
+         betas=(0.95, 0.95)
     )
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    #     optim, 
-    #     T_max=EPOCHS,  # Total number of iterations to reach minimum LR
-    #     eta_min=LR*1e-4       # Minimum learning rate target
-    # )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optim, 
+        T_max=MAX_TOKENS / ( BLOCK_SIZE * BATCH_SIZE),  # Total number of iterations to reach minimum LR
+        eta_min=LR*1e-4       # Minimum learning rate target
+    )
     metrics = {
          "train": [],
          "validation": []
@@ -81,13 +85,12 @@ if __name__ == "__main__":
 
             guess = model(inputs)
             error = loss(guess.view(B*T, -1), targets.view(B*T))
-
             error.backward()
             optim.step()
 
             train_loss.append(error.detach().item())
             pbar.update(B*T)
-            # scheduler.step()
+            scheduler.step()
             
             prev_token_count = prev_token_count + B*T
             
@@ -114,11 +117,12 @@ if __name__ == "__main__":
 
                 if metrics["validation"][-1] < best_val_loss:
                     best_val_loss = metrics["validation"][-1]
+                    logging.info(f"Best validation loss: {best_val_loss}")
                     torch.save(
                         {
                             "model_state_dict": model.state_dict(),
                             "model_kwargs": model_kwargs,
-                            "block_size": block_size,
+                            "block_size": BLOCK_SIZE,
                             "num_tokens": prev_token_count,
                         },
                         "checkpoint.pt",

@@ -50,7 +50,7 @@ def main():
     parser.add_argument("--checkpoint", type=str, default="checkpoint.pt")
     parser.add_argument("--max_new_tokens", type=int, default=50)
     parser.add_argument("--temperature", type=float, default=0.8)
-    parser.add_argument("--top_k", type=int, default=40)
+    parser.add_argument("--top_k", type=int, default=100)
     args = parser.parse_args()
     enc = tiktoken.get_encoding("gpt2")
     model, block_size = load_model(args.checkpoint)
