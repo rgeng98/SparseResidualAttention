@@ -6,12 +6,12 @@ import AttnRes
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-# import bitsandbytes as bnb
+import bitsandbytes as bnb
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MAX_TOKENS = 3.5e9 # Train this model an ~3.5 Billion tokens
 LR = 1e-4
-LOG_EVERY = 100
+LOG_EVERY = 10000
 BATCH_SIZE = 4
 NUM_HEADS = 32
 BLOCK_SIZE = 100
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     logging.info(f"Created a Language model with {param_count:,} parameters.")
 
-    optim = torch.optim.AdamW(
+    optim = bnb.optim.AdamW8bit(
          model.parameters(),
          lr = LR,
          betas=(0.95, 0.95)
